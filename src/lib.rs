@@ -167,7 +167,8 @@ impl UrlPy {
 
     #[getter]
     fn query_pairs(&self) -> Vec<(String, String)> {
-        self.inner.query_pairs()
+        self.inner
+            .query_pairs()
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect()
     }
@@ -256,7 +257,7 @@ impl UrlPy {
 }
 
 #[repr(transparent)]
-#[pyclass(name = "Domain", module = "url", frozen)]
+#[pyclass(name = "Host", module = "url", frozen)]
 struct HostPy {
     inner: url::Host,
 }
@@ -264,10 +265,22 @@ struct HostPy {
 #[pymethods]
 impl HostPy {
     #[new]
-    fn new(input: String) -> Self {
-        Self {
-            inner: url::Host::Domain(input),
+    fn new(input: &str) -> PyResult<Self> {
+        url::Host::parse(input)
+            .map(|inner| Self { inner })
+            .map_err(|e| URLError::new_err(e.to_string()))
+    }
+
+    fn __repr__(&self) -> String {
+        match &self.inner {
+            url::Host::Domain(d) => format!("<Host Domain({d})>"),
+            url::Host::Ipv4(ip) => format!("<Host IPv4({ip})>"),
+            url::Host::Ipv6(ip) => format!("<Host IPv6({ip})>"),
         }
+    }
+
+    fn __str__(&self) -> String {
+        self.inner.to_string()
     }
 
     fn __hash__(&self) -> u64 {
@@ -282,6 +295,48 @@ impl HostPy {
 
     fn __ne__(&self, other: &Self) -> bool {
         self.inner != other.inner
+    }
+
+    /// Returns the domain string, or None if not a domain.
+    #[getter]
+    fn domain(&self) -> Option<&str> {
+        match &self.inner {
+            url::Host::Domain(d) => Some(d.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Returns the IPv4 address as a string, or None.
+    #[getter]
+    fn ipv4(&self) -> Option<String> {
+        match &self.inner {
+            url::Host::Ipv4(ip) => Some(ip.to_string()),
+            _ => None,
+        }
+    }
+
+    /// Returns the IPv6 address as a string, or None.
+    #[getter]
+    fn ipv6(&self) -> Option<String> {
+        match &self.inner {
+            url::Host::Ipv6(ip) => Some(ip.to_string()),
+            _ => None,
+        }
+    }
+
+    #[getter]
+    fn is_domain(&self) -> bool {
+        matches!(&self.inner, url::Host::Domain(_))
+    }
+
+    #[getter]
+    fn is_ipv4(&self) -> bool {
+        matches!(&self.inner, url::Host::Ipv4(_))
+    }
+
+    #[getter]
+    fn is_ipv6(&self) -> bool {
+        matches!(&self.inner, url::Host::Ipv6(_))
     }
 }
 

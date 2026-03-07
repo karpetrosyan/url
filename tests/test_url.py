@@ -17,11 +17,15 @@ def test_https_url():
     assert issue_url.password is None
     assert issue_url.host_str == "github.com"
 
-    assert issue_url.host == url.Domain("github.com")
+    assert issue_url.host == url.Host("github.com")
 
     assert issue_url.port is None
     assert issue_url.path == "/rust-lang/rust/issues"
-    assert list(issue_url.path_segments) == ["rust-lang", "rust", "issues"]
+    assert list(issue_url.path_segments or []) == [
+        "rust-lang",
+        "rust",
+        "issues",
+    ]
     assert issue_url.query == "labels=E-easy&state=open"
 
     # TODO: Decide what API makes sense here in Python --
@@ -326,3 +330,113 @@ def test_without_pair():
     )
     removed_name = url_with_encoded.without_pair("name")
     assert removed_name.query_pairs == [("other", "value")]
+
+
+def test_host_domain():
+    host = url.Host("example.com")
+    assert host.is_domain
+    assert not host.is_ipv4
+    assert not host.is_ipv6
+    assert host.domain == "example.com"
+    assert host.ipv4 is None
+    assert host.ipv6 is None
+    assert str(host) == "example.com"
+    assert repr(host) == "<Host Domain(example.com)>"
+
+
+def test_host_ipv4():
+    host = url.Host("192.168.1.1")
+    assert not host.is_domain
+    assert host.is_ipv4
+    assert not host.is_ipv6
+    assert host.domain is None
+    assert host.ipv4 == "192.168.1.1"
+    assert host.ipv6 is None
+    assert str(host) == "192.168.1.1"
+    assert repr(host) == "<Host IPv4(192.168.1.1)>"
+
+
+def test_host_ipv6():
+    host = url.Host("[::1]")
+    assert not host.is_domain
+    assert not host.is_ipv4
+    assert host.is_ipv6
+    assert host.domain is None
+    assert host.ipv4 is None
+    assert host.ipv6 == "::1"
+    assert str(host) == "[::1]"
+    assert repr(host) == "<Host IPv6(::1)>"
+
+
+def test_host_ipv6_full():
+    host = url.Host("[2001:0db8:85a3:0000:0000:8a2e:0370:7334]")
+    assert host.is_ipv6
+    assert host.ipv6 is not None
+    assert str(host) == "[2001:db8:85a3::8a2e:370:7334]"
+
+
+def test_host_equality():
+    host1 = url.Host("example.com")
+    host2 = url.Host("example.com")
+    host3 = url.Host("other.com")
+
+    assert host1 == host2
+    assert host1 != host3
+    assert host2 != host3
+
+
+def test_host_hash():
+    host1 = url.Host("example.com")
+    host2 = url.Host("example.com")
+    host3 = url.Host("other.com")
+
+    assert {host1, host2, host3} == {host1, host3}
+    assert hash(host1) == hash(host2)
+
+
+def test_host_invalid():
+    with pytest.raises(url.URLError):
+        url.Host("")
+
+    with pytest.raises(url.URLError):
+        url.Host("invalid host with spaces")
+
+    with pytest.raises(url.URLError):
+        url.Host("[invalid]")
+
+
+@pytest.mark.parametrize(
+    "input,expected_type,expected_str",
+    [
+        pytest.param("localhost", "domain", "localhost", id="localhost"),
+        pytest.param(
+            "example.com", "domain", "example.com", id="simple domain"
+        ),
+        pytest.param(
+            "sub.example.com", "domain", "sub.example.com", id="subdomain"
+        ),
+        pytest.param("127.0.0.1", "ipv4", "127.0.0.1", id="localhost ipv4"),
+        pytest.param("0.0.0.0", "ipv4", "0.0.0.0", id="zero ipv4"),
+        pytest.param(
+            "255.255.255.255", "ipv4", "255.255.255.255", id="max ipv4"
+        ),
+        pytest.param("[::]", "ipv6", "[::]", id="zero ipv6"),
+        pytest.param("[::1]", "ipv6", "[::1]", id="localhost ipv6"),
+        pytest.param("[fe80::1]", "ipv6", "[fe80::1]", id="link local ipv6"),
+    ],
+)
+def test_host_parsing_variants(
+    input: str, expected_type: str, expected_str: str
+):
+    host = url.Host(input)
+
+    if expected_type == "domain":
+        assert host.is_domain
+        assert host.domain == expected_str
+    elif expected_type == "ipv4":
+        assert host.is_ipv4
+        assert host.ipv4 == expected_str
+    elif expected_type == "ipv6":
+        assert host.is_ipv6
+
+    assert str(host) == expected_str
